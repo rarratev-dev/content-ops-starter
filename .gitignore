@@ -2,8 +2,12 @@
 
 # dependencies
 /node_modules
+**/node_modules
 /.pnp
 .pnp.js
+
+# MCP configuration (contains sensitive credentials)
+.mcp.json
 
 # Netlify Visual Editor (formerly Stackbit)
 .stackbit/cache
