@@ -1,0 +1,274 @@
+{
+  "name": "CV Analysis - SharePoint Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Trigger Programado",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "resource": "folder",
+        "operation": "getChildren",
+        "folderId": "={{$json.folderId || 'root'}}"
+      },
+      "id": "get-sharepoint-files",
+      "name": "Obtener Archivos SharePoint",
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.name }}",
+              "rightValue": ".pdf",
+              "operator": {
+                "type": "string",
+                "operation": "endsWith"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "looseTypeValidation": true
+      },
+      "id": "filter-pdfs",
+      "name": "Filtrar PDFs y DOCX",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": "={{ $json.id }}"
+      },
+      "id": "download-file",
+      "name": "Descargar Archivo",
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "id": "extract-text",
+      "name": "Extraer Texto",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "cvText",
+              "value": "={{ $json.data }}",
+              "type": "string"
+            },
+            {
+              "id": "2",
+              "name": "fileName",
+              "value": "={{ $('Filtrar PDFs y DOCX').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "3",
+              "name": "receivedDate",
+              "value": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "prepare-data",
+      "name": "Preparar Datos",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "messages": {
+          "values": [
+            {
+              "content": "Eres un experto en RRHH. Analiza CVs y responde en JSON."
+            },
+            {
+              "content": "Analiza este CV:\n\n{{ $json.cvText }}\n\nCriterios: Desarrollador Full Stack, 3+ anos exp, JavaScript, React, Node.js\n\nResponde JSON con: nombre, email, telefono, experiencia_anos, habilidades_encontradas, puntuacion (0-100), recomendacion",
+              "role": "user"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "id": "openai-analysis",
+      "name": "Analisis con OpenAI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.4,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const response = $input.first().json.message?.content || $input.first().json.choices?.[0]?.message?.content || '{}';\nlet analysis = {};\ntry {\n  const match = response.match(/\\{[\\s\\S]*\\}/);\n  analysis = match ? JSON.parse(match[0]) : {};\n} catch(e) {\n  analysis = {error: 'Parse error'};\n}\nconst cvData = $('Preparar Datos').first().json;\nreturn [{\n  json: {\n    fecha: cvData.receivedDate,\n    archivo: cvData.fileName,\n    nombre: analysis.nombre || 'N/A',\n    email: analysis.email || 'N/A',\n    telefono: analysis.telefono || 'N/A',\n    experiencia: analysis.experiencia_anos || 0,\n    habilidades: Array.isArray(analysis.habilidades_encontradas) ? analysis.habilidades_encontradas.join(', ') : '',\n    puntuacion: analysis.puntuacion || 0,\n    recomendacion: analysis.recomendacion || 'N/A'\n  }\n}];"
+      },
+      "id": "process-response",
+      "name": "Procesar Respuesta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "workbook": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $json.workbookId }}"
+        },
+        "sheet": {
+          "__rl": true,
+          "mode": "name",
+          "value": "CVs"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "save-excel",
+      "name": "Guardar en Excel",
+      "type": "n8n-nodes-base.microsoftExcel",
+      "typeVersion": 2,
+      "position": [2000, 300]
+    }
+  ],
+  "connections": {
+    "Trigger Programado": {
+      "main": [
+        [
+          {
+            "node": "Obtener Archivos SharePoint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener Archivos SharePoint": {
+      "main": [
+        [
+          {
+            "node": "Filtrar PDFs y DOCX",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrar PDFs y DOCX": {
+      "main": [
+        [
+          {
+            "node": "Descargar Archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar Archivo": {
+      "main": [
+        [
+          {
+            "node": "Extraer Texto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Texto": {
+      "main": [
+        [
+          {
+            "node": "Preparar Datos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Datos": {
+      "main": [
+        [
+          {
+            "node": "Analisis con OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analisis con OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Procesar Respuesta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Respuesta": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
