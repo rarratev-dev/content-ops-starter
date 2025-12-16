@@ -1,0 +1,496 @@
+{
+  "name": "CV Analysis - SharePoint Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "siteId": "={{ $json.siteId }}",
+        "driveId": "={{ $json.driveId }}",
+        "folderId": "={{ $json.folderId }}",
+        "options": {
+          "includeSubfolders": false
+        }
+      },
+      "id": "trigger-sharepoint",
+      "name": "Trigger - Nuevo CV en SharePoint",
+      "type": "n8n-nodes-base.microsoftOneDriveTrigger",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "CONFIGURAR_CREDENCIAL_SHAREPOINT",
+          "name": "SharePoint OAuth2"
+        }
+      },
+      "notes": "CONFIGURAR: Ingresa tu siteId, driveId y folderId de SharePoint donde llegarán los CVs"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "download",
+        "fileId": "={{ $json.id }}"
+      },
+      "id": "download-cv",
+      "name": "Descargar CV",
+      "type": "n8n-nodes-base.microsoftOneDrive",
+      "typeVersion": 1,
+      "position": [460, 300],
+      "credentials": {
+        "microsoftOneDriveOAuth2Api": {
+          "id": "CONFIGURAR_CREDENCIAL_SHAREPOINT",
+          "name": "SharePoint OAuth2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "extractText",
+        "options": {}
+      },
+      "id": "extract-text-pdf",
+      "name": "Extraer Texto (PDF)",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [680, 200],
+      "notes": "Extrae texto de archivos PDF"
+    },
+    {
+      "parameters": {
+        "operation": "extractText",
+        "options": {}
+      },
+      "id": "extract-text-docx",
+      "name": "Extraer Texto (DOCX)",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [680, 400],
+      "notes": "Extrae texto de archivos Word"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.name }}",
+              "operation": "endsWith",
+              "value2": ".pdf"
+            }
+          ]
+        }
+      },
+      "id": "router-file-type",
+      "name": "Router por Tipo de Archivo",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [680, 300],
+      "notes": "Redirige según si es PDF o DOCX"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-extracted-text",
+      "name": "Unificar Texto Extraído",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cv-text",
+              "name": "cvText",
+              "value": "={{ $json.text }}",
+              "type": "string"
+            },
+            {
+              "id": "file-name",
+              "name": "fileName",
+              "value": "={{ $('Trigger - Nuevo CV en SharePoint').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "file-id",
+              "name": "fileId",
+              "value": "={{ $('Trigger - Nuevo CV en SharePoint').item.json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "received-date",
+              "name": "receivedDate",
+              "value": "={{ $now.format('yyyy-MM-dd HH:mm:ss') }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-cv-data",
+      "name": "Preparar Datos del CV",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "criteria",
+              "name": "evaluationCriteria",
+              "value": "{\n  \"puesto\": \"Desarrollador Full Stack\",\n  \"experiencia_minima_anos\": 3,\n  \"habilidades_requeridas\": [\n    \"JavaScript\",\n    \"TypeScript\",\n    \"React\",\n    \"Node.js\",\n    \"SQL\"\n  ],\n  \"habilidades_deseables\": [\n    \"Docker\",\n    \"AWS\",\n    \"CI/CD\",\n    \"GraphQL\"\n  ],\n  \"educacion\": \"Ingeniería en Sistemas, Computación o afín\",\n  \"idiomas\": [\n    {\n      \"idioma\": \"Español\",\n      \"nivel\": \"Nativo\"\n    },\n    {\n      \"idioma\": \"Inglés\",\n      \"nivel\": \"Intermedio-Avanzado\"\n    }\n  ],\n  \"ubicacion_preferida\": \"Remoto o Ciudad de México\",\n  \"rango_salarial\": \"$35,000 - $55,000 MXN\"\n}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "set-evaluation-criteria",
+      "name": "Criterios de Evaluación",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [1100, 500],
+      "notes": "CONFIGURAR: Modifica los criterios de evaluación según el puesto"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4o",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Eres un experto en recursos humanos y reclutamiento. Tu tarea es analizar currículums vitae (CVs) y evaluarlos contra criterios de selección específicos.\n\nDebes proporcionar un análisis estructurado y objetivo, identificando fortalezas, áreas de mejora y una puntuación general de compatibilidad.\n\nSiempre responde en formato JSON estructurado."
+            },
+            {
+              "role": "user",
+              "content": "Analiza el siguiente CV contra los criterios de evaluación proporcionados.\n\n## CRITERIOS DE EVALUACIÓN:\n{{ $('Criterios de Evaluación').item.json.evaluationCriteria }}\n\n## CONTENIDO DEL CV:\n{{ $('Preparar Datos del CV').item.json.cvText }}\n\n## INSTRUCCIONES:\nProporciona tu análisis en el siguiente formato JSON:\n\n```json\n{\n  \"candidato\": {\n    \"nombre\": \"Nombre extraído del CV\",\n    \"email\": \"Email si está disponible\",\n    \"telefono\": \"Teléfono si está disponible\",\n    \"ubicacion\": \"Ubicación del candidato\"\n  },\n  \"experiencia\": {\n    \"anos_totales\": 0,\n    \"experiencia_relevante\": \"Descripción breve\",\n    \"empresas_destacadas\": []\n  },\n  \"educacion\": {\n    \"nivel_maximo\": \"Licenciatura/Maestría/etc\",\n    \"institucion\": \"Nombre de la institución\",\n    \"carrera\": \"Nombre de la carrera\",\n    \"cumple_requisito\": true/false\n  },\n  \"habilidades\": {\n    \"requeridas_encontradas\": [],\n    \"requeridas_faltantes\": [],\n    \"deseables_encontradas\": [],\n    \"otras_relevantes\": []\n  },\n  \"idiomas\": {\n    \"cumple_requisitos\": true/false,\n    \"detalle\": []\n  },\n  \"evaluacion\": {\n    \"puntuacion_general\": 0,\n    \"nivel_compatibilidad\": \"Alto/Medio/Bajo\",\n    \"fortalezas\": [],\n    \"areas_mejora\": [],\n    \"recomendacion\": \"Avanzar a entrevista / Considerar para futuras vacantes / No cumple perfil\",\n    \"notas_adicionales\": \"\"\n  }\n}\n```\n\nLa puntuación general debe ser de 0 a 100, donde:\n- 80-100: Alta compatibilidad, candidato ideal\n- 60-79: Buena compatibilidad, cumple mayoría de requisitos\n- 40-59: Compatibilidad media, falta experiencia o habilidades clave\n- 0-39: Baja compatibilidad, no cumple requisitos mínimos"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3,
+          "maxTokens": 2000
+        }
+      },
+      "id": "llm-analysis",
+      "name": "Análisis LLM del CV",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.4,
+      "position": [1320, 300],
+      "credentials": {
+        "openAiApi": {
+          "id": "CONFIGURAR_CREDENCIAL_OPENAI",
+          "name": "OpenAI API"
+        }
+      },
+      "notes": "CONFIGURAR: Puedes cambiar a Claude (Anthropic) o cualquier otro LLM compatible"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parsear la respuesta del LLM\nconst llmResponse = $input.first().json.message.content;\nconst cvData = $('Preparar Datos del CV').first().json;\n\n// Intentar extraer el JSON de la respuesta\nlet analysis;\ntry {\n  // Buscar el JSON en la respuesta (puede venir con markdown)\n  const jsonMatch = llmResponse.match(/```json\\n?([\\s\\S]*?)\\n?```/) || \n                   llmResponse.match(/\\{[\\s\\S]*\\}/);\n  \n  if (jsonMatch) {\n    const jsonStr = jsonMatch[1] || jsonMatch[0];\n    analysis = JSON.parse(jsonStr);\n  } else {\n    throw new Error('No se encontró JSON válido en la respuesta');\n  }\n} catch (error) {\n  analysis = {\n    error: 'Error al parsear respuesta del LLM',\n    rawResponse: llmResponse\n  };\n}\n\n// Preparar datos para Excel\nconst excelRow = {\n  // Datos del archivo\n  fecha_recepcion: cvData.receivedDate,\n  nombre_archivo: cvData.fileName,\n  id_archivo: cvData.fileId,\n  \n  // Datos del candidato\n  nombre_candidato: analysis.candidato?.nombre || 'No disponible',
+   email: analysis.candidato?.email || 'No disponible',\n  telefono: analysis.candidato?.telefono || 'No disponible',\n  ubicacion: analysis.candidato?.ubicacion || 'No disponible',\n  \n  // Experiencia\n  anos_experiencia: analysis.experiencia?.anos_totales || 0,\n  experiencia_relevante: analysis.experiencia?.experiencia_relevante || '',\n  \n  // Educación\n  nivel_educativo: analysis.educacion?.nivel_maximo || '',\n  carrera: analysis.educacion?.carrera || '',\n  cumple_educacion: analysis.educacion?.cumple_requisito ? 'Sí' : 'No',\n  \n  // Habilidades\n  habilidades_requeridas: (analysis.habilidades?.requeridas_encontradas || []).join(', '),\n  habilidades_faltantes: (analysis.habilidades?.requeridas_faltantes || []).join(', '),\n  habilidades_deseables: (analysis.habilidades?.deseables_encontradas || []).join(', '),\n  \n  // Idiomas\n  cumple_idiomas: analysis.idiomas?.cumple_requisitos ? 'Sí' : 'No',\n  \n  // Evaluación\n  puntuacion: analysis.evaluacion?.puntuacion_general || 0,\n  nivel_compatibilidad: analysis.evaluacion?.nivel_compatibilidad || '',\n  fortalezas: (analysis.evaluacion?.fortalezas || []).join('; '),\n  areas_mejora: (analysis.evaluacion?.areas_mejora || []).join('; '),\n  recomendacion: analysis.evaluacion?.recomendacion || '',\n  notas: analysis.evaluacion?.notas_adicionales || '',\n  \n  // Análisis completo en JSON\n  analisis_json: JSON.stringify(analysis, null, 2)\n};\n\nreturn [{ json: excelRow }];"
+      },
+      "id": "parse-llm-response",
+      "name": "Procesar Respuesta LLM",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "workbook": {
+          "__rl": true,
+          "mode": "list",
+          "value": "={{ $json.workbookId }}"
+        },
+        "sheet": {
+          "__rl": true,
+          "mode": "list",
+          "value": "CVs_Analizados"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Fecha Recepción": "={{ $json.fecha_recepcion }}",
+            "Nombre Archivo": "={{ $json.nombre_archivo }}",
+            "Nombre Candidato": "={{ $json.nombre_candidato }}",
+            "Email": "={{ $json.email }}",
+            "Teléfono": "={{ $json.telefono }}",
+            "Ubicación": "={{ $json.ubicacion }}",
+            "Años Experiencia": "={{ $json.anos_experiencia }}",
+            "Experiencia Relevante": "={{ $json.experiencia_relevante }}",
+            "Nivel Educativo": "={{ $json.nivel_educativo }}",
+            "Carrera": "={{ $json.carrera }}",
+            "Cumple Educación": "={{ $json.cumple_educacion }}",
+            "Habilidades Requeridas": "={{ $json.habilidades_requeridas }}",
+            "Habilidades Faltantes": "={{ $json.habilidades_faltantes }}",
+            "Habilidades Deseables": "={{ $json.habilidades_deseables }}",
+            "Cumple Idiomas": "={{ $json.cumple_idiomas }}",
+            "Puntuación": "={{ $json.puntuacion }}",
+            "Nivel Compatibilidad": "={{ $json.nivel_compatibilidad }}",
+            "Fortalezas": "={{ $json.fortalezas }}",
+            "Áreas de Mejora": "={{ $json.areas_mejora }}",
+            "Recomendación": "={{ $json.recomendacion }}",
+            "Notas": "={{ $json.notas }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "excel-append",
+      "name": "Guardar en Excel",
+      "type": "n8n-nodes-base.microsoftExcel",
+      "typeVersion": 2,
+      "position": [1760, 300],
+      "credentials": {
+        "microsoftExcelOAuth2Api": {
+          "id": "CONFIGURAR_CREDENCIAL_EXCEL",
+          "name": "Microsoft Excel OAuth2"
+        }
+      },
+      "notes": "CONFIGURAR: Especifica el workbookId y asegúrate de que la hoja 'CVs_Analizados' exista"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.puntuacion }}",
+              "operation": "largerEqual",
+              "value2": 70
+            }
+          ]
+        }
+      },
+      "id": "check-score",
+      "name": "¿Candidato Destacado?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1980, 300],
+      "notes": "Verifica si el candidato tiene puntuación >= 70 para notificar"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $env.HR_EMAIL || 'rrhh@empresa.com' }}",
+        "subject": "🎯 Nuevo candidato destacado: {{ $('Procesar Respuesta LLM').item.json.nombre_candidato }}",
+        "message": "## Nuevo candidato con alta compatibilidad\n\n**Nombre:** {{ $('Procesar Respuesta LLM').item.json.nombre_candidato }}\n**Email:** {{ $('Procesar Respuesta LLM').item.json.email }}\n**Teléfono:** {{ $('Procesar Respuesta LLM').item.json.telefono }}\n\n### Evaluación\n- **Puntuación:** {{ $('Procesar Respuesta LLM').item.json.puntuacion }}/100\n- **Nivel:** {{ $('Procesar Respuesta LLM').item.json.nivel_compatibilidad }}\n- **Recomendación:** {{ $('Procesar Respuesta LLM').item.json.recomendacion }}\n\n### Fortalezas\n{{ $('Procesar Respuesta LLM').item.json.fortalezas }}\n\n### Archivo\n{{ $('Procesar Respuesta LLM').item.json.nombre_archivo }}\n\n---\n*Este análisis fue generado automáticamente.*",
+        "options": {}
+      },
+      "id": "send-notification",
+      "name": "Notificar Candidato Destacado",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2200, 200],
+      "credentials": {
+        "smtp": {
+          "id": "CONFIGURAR_CREDENCIAL_SMTP",
+          "name": "SMTP"
+        }
+      },
+      "notes": "CONFIGURAR: Configura las credenciales SMTP para enviar notificaciones"
+    },
+    {
+      "parameters": {},
+      "id": "no-notification",
+      "name": "Sin Notificación",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2200, 400],
+      "notes": "Candidatos con puntuación < 70 no generan notificación"
+    },
+    {
+      "parameters": {
+        "content": "## 📋 Pipeline de Análisis de CVs\n\n### Flujo del Proceso:\n1. **Trigger**: Detecta nuevos archivos en carpeta SharePoint\n2. **Descarga**: Obtiene el archivo CV\n3. **Extracción**: Lee el contenido del PDF/DOCX\n4. **Análisis LLM**: Evalúa el CV contra criterios\n5. **Excel**: Guarda resultados en tabla\n6. **Notificación**: Alerta si el candidato es destacado\n\n### ⚠️ Configuración Requerida:\n- Credenciales de SharePoint/OneDrive\n- Credenciales de OpenAI (o tu LLM preferido)\n- Credenciales de Microsoft Excel\n- Credenciales SMTP (opcional, para notificaciones)\n\n### 📝 Notas:\n- Modifica los **Criterios de Evaluación** según el puesto\n- Ajusta el umbral de notificación (actualmente >= 70)\n- La hoja Excel debe llamarse 'CVs_Analizados'",
+        "height": 480,
+        "width": 380
+      },
+      "id": "sticky-note",
+      "name": "Instrucciones",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, 140]
+    }
+  ],
+  "connections": {
+    "Trigger - Nuevo CV en SharePoint": {
+      "main": [
+        [
+          {
+            "node": "Descargar CV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar CV": {
+      "main": [
+        [
+          {
+            "node": "Router por Tipo de Archivo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Router por Tipo de Archivo": {
+      "main": [
+        [
+          {
+            "node": "Extraer Texto (PDF)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Extraer Texto (DOCX)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Texto (PDF)": {
+      "main": [
+        [
+          {
+            "node": "Unificar Texto Extraído",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extraer Texto (DOCX)": {
+      "main": [
+        [
+          {
+            "node": "Unificar Texto Extraído",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Unificar Texto Extraído": {
+      "main": [
+        [
+          {
+            "node": "Preparar Datos del CV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Datos del CV": {
+      "main": [
+        [
+          {
+            "node": "Criterios de Evaluación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Criterios de Evaluación": {
+      "main": [
+        [
+          {
+            "node": "Análisis LLM del CV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Análisis LLM del CV": {
+      "main": [
+        [
+          {
+            "node": "Procesar Respuesta LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Procesar Respuesta LLM": {
+      "main": [
+        [
+          {
+            "node": "Guardar en Excel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardar en Excel": {
+      "main": [
+        [
+          {
+            "node": "¿Candidato Destacado?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Candidato Destacado?": {
+      "main": [
+        [
+          {
+            "node": "Notificar Candidato Destacado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Sin Notificación",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "HR",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Reclutamiento",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "CV Analysis",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}
